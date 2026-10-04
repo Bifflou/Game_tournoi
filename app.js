@@ -354,9 +354,9 @@ function renderSetup() {
       <div class="covers">${covers}</div>
     </section>
     ${chosen.length ? `<section class="panel"><h2>3 · L'ordre et les formats</h2>
-      ${chosen.length > 1 ? '<button class="btn ghost" data-act="shuffleOrder">🎲 Tirer l\'ordre au sort</button>' : ''}
       <div class="settings">${settings}</div></section>` : ''}
-    <div class="cta"><button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>${ready ? 'Lancer la soirée 🚀' : 'Il faut 2 joueurs et 1 jeu'}</button></div>`;
+    <div class="cta"><button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>${ready ? 'Lancer 🚀' : 'Il faut 2 joueurs et 1 jeu'}</button>
+      ${ready && chosen.length > 1 ? '<button class="btn big alt" data-act="start" data-random="1">Ordre aléatoire 🎲</button>' : ''}</div>`;
 }
 
 const stepper = (label, key, field, v) => `
@@ -729,15 +729,15 @@ const ACT = {
     [o[i], o[j]] = [o[j], o[i]];
     state.order = o;
   },
-  shuffleOrder: () => { state.order = shuffle(chosenKeys()); },
   fmt: d => { state.setup[d.key].format = d.v; },
   opt: d => {
     const o = state.setup[d.key];
     o[d.f] = Math.min(d.f === 'parties' ? 10 : 30, Math.max(1, o[d.f] + +d.d));
   },
-  start: () => {
+  // Avec data-random, l'ordre des jeux est tiré au sort au lancement, sans être montré avant.
+  start: d => {
     const pids = state.players.filter(p => p.present).map(p => p.id);
-    const games = chosenKeys().map(k => newGame(k, state.setup[k], pids));
+    const games = (d.random ? shuffle(chosenKeys()) : chosenKeys()).map(k => newGame(k, state.setup[k], pids));
     state.soiree = { id: uid(), date: new Date().toISOString(), pids, games };
     ui.gameId = games[0].id;
     ui.editPlayer = null;

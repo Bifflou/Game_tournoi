@@ -30,7 +30,7 @@ Les données sont enregistrées dans le navigateur (localStorage) de l'appareil 
 ## En plus
 
 - **Avatars** : un emoji ou une photo par joueur (touche l'avatar dans la liste des joueurs).
-- **Ordre des jeux** : réglable à la main ou tiré au sort ; pendant la soirée, une roulette choisit le prochain jeu.
+- **Ordre des jeux** : réglable à la main, ou tiré au sort au lancement avec « Ordre aléatoire » ; pendant la soirée, une roulette choisit le prochain jeu.
 - **Prochain match** : un bandeau indique qui joue maintenant et qui joue ensuite.
 - **Podium** : écran de fin avec confettis et image récap à partager.
 - **Stats** : soirées gagnées, podiums, meilleur jeu, bête noire et victime préférée de chaque joueur.

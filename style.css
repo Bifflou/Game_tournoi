@@ -71,8 +71,9 @@ input:focus { outline: 2px solid var(--violet); border-color: transparent; }
 .tag.live { background: rgba(255, 204, 51, .16); color: var(--gold); }
 
 /* Bouton d'action principal collé au-dessus de la barre d'onglets */
-.cta { position: sticky; bottom: calc(var(--nav-h) + var(--safe-b) + 10px); z-index: 10; }
-.cta .btn { box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
+.cta { display: flex; gap: 8px; position: sticky; bottom: calc(var(--nav-h) + var(--safe-b) + 10px); z-index: 10; }
+.cta .btn.alt { background: var(--violet); color: #fff; }
+.cta .btn { flex: 1; padding: 0 8px; font-size: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
 .cta .btn:disabled { opacity: 1; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); font-size: 15px; }
 
 /* Joueurs */
