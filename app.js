@@ -52,7 +52,7 @@ function load() {
   return { players: [], setup: {}, soiree: null, history: [] };
 }
 let state = load();
-const ui = { tab: 'soiree', gameId: null, drafts: {}, editing: {} };
+const ui = { tab: 'soiree', gameId: null, drafts: {}, editing: {}, editPlayer: null, podium: null, next: null };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignore */ } };
 const player = pid => state.players.find(p => p.id === pid) || { name: '?', color: '#888' };
 const defaultOpts = key => (GAMES[key].type === 'duel'
@@ -281,38 +281,59 @@ function leaderboard(soiree) {
 }
 
 /* ---------- Rendu ---------- */
-const plHtml = (pid, cls = '') => {
-  const p = player(pid);
-  return `<span class="pl ${cls}" style="--c:${p.color}">${esc(p.name)}</span>`;
+const EMOJIS = ['😎', '🤡', '👑', '🔥', '💀', '👻', '🤖', '👽', '🐸', '🦊', '🐼', '🦄', '🐔', '🐙', '🦖', '🍌', '🥑', '🍕', '⚡', '🎮', '🥷', '🧙', '🧟', '🤠'];
+// Avatar d'un joueur : photo (data URL), emoji, ou à défaut son initiale sur sa couleur.
+const avHtml = p => {
+  const a = p.avatar || '';
+  const inner = a.startsWith('data:') ? `<img src="${a}" alt="">` : a || esc((p.name || '?')[0].toUpperCase());
+  return `<span class="av" style="--c:${p.color}">${inner}</span>`;
 };
+const plOf = (p, cls = '') => `<span class="pl ${cls}">${avHtml(p)}<span class="pn">${esc(p.name)}</span></span>`;
+const plHtml = (pid, cls = '') => plOf(player(pid), cls);
+const isNext = (g, m) => (ui.next === g.id + ':' + m.id ? 'next-m' : '');
+const dateFr = d => new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+// Jeux sélectionnés pour la soirée, dans l'ordre de passage choisi.
+function chosenKeys() {
+  const o = (state.order || []).filter(k => state.setup[k]);
+  Object.keys(GAMES).forEach(k => { if (state.setup[k] && !o.includes(k)) o.push(k); });
+  return o;
+}
 const medal = place => (place ? (['🥇', '🥈', '🥉'][place - 1] || place + 'e') : '—');
 
 function renderSetup() {
   const present = state.players.filter(p => p.present);
   const n = present.length;
-  const chosen = Object.keys(GAMES).filter(k => state.setup[k]);
+  const chosen = chosenKeys();
   const players = state.players.map(p => `
     <div class="chip ${p.present ? 'on' : ''}" style="--c:${p.color}">
-      <button class="chip-main" data-act="togglePresent" data-id="${p.id}" title="Présent ce soir ?">
-        <span class="dot"></span>${esc(p.name)}
-      </button>
+      <button class="chip-av" data-act="editPlayer" data-id="${p.id}" title="Changer l'avatar">${avHtml(p)}</button>
+      <button class="chip-main" data-act="togglePresent" data-id="${p.id}" title="Présent ce soir ?">${esc(p.name)}</button>
       <button class="chip-x" data-act="delPlayer" data-id="${p.id}" title="Supprimer">×</button>
     </div>`).join('');
+  const ep = state.players.find(p => p.id === ui.editPlayer);
+  const editor = ep ? `<div class="avedit">
+      <div class="row between"><b>Avatar de ${esc(ep.name)}</b><button class="link" data-act="editPlayer" data-id="">Fermer</button></div>
+      <div class="emojis">${EMOJIS.map(e => `<button class="${ep.avatar === e ? 'on' : ''}" data-act="setAvatar" data-v="${e}">${e}</button>`).join('')}</div>
+      <div class="row between"><label class="btn small file">📷 Choisir une photo<input type="file" id="avatarFile" accept="image/*" hidden></label>
+        <button class="link" data-act="setAvatar" data-v="">Retirer</button></div>
+    </div>` : '';
 
   const covers = Object.entries(GAMES).map(([key, def]) => `
     <button class="cover ${state.setup[key] ? 'on' : ''}" ${art(key)} data-act="toggleGame" data-key="${key}" aria-pressed="${!!state.setup[key]}">
-      <span class="check">${state.setup[key] ? '✓' : '+'}</span>
+      <span class="check">${state.setup[key] ? chosen.indexOf(key) + 1 : '+'}</span>
       <span class="cover-name">${def.name}</span>
     </button>`).join('');
 
-  const settings = chosen.map(key => {
+  const settings = chosen.map((key, i) => {
     const def = GAMES[key], o = state.setup[key];
     const opts = def.type === 'duel'
       ? `<div class="seg">${Object.entries(FORMATS).map(([f, label]) =>
         `<button class="${o.format === f ? 'on' : ''}" data-act="fmt" data-key="${key}" data-v="${f}">${label}</button>`).join('')}</div>`
       : stepper('Parties', key, 'parties', o.parties) + (def.targetLabel ? stepper(def.targetLabel, key, 'target', o.target) : '');
     return `<div class="setting" ${art(key)}>
-      <div class="setting-head"><span class="thumb"></span><div><b>${def.name}</b><small>${def.rules}</small></div></div>
+      <div class="setting-head"><span class="num">${i + 1}</span><span class="thumb"></span><div class="grow"><b>${def.name}</b><small>${def.rules}</small></div>
+        <span class="updown"><button data-act="moveGame" data-key="${key}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Monter">▲</button>
+        <button data-act="moveGame" data-key="${key}" data-d="1" ${i < chosen.length - 1 ? '' : 'disabled'} aria-label="Descendre">▼</button></span></div>
       ${opts}<p class="hint">${matchCount(key, o, n) || 'Ajoute des joueurs pour voir le format'}</p></div>`;
   }).join('');
 
@@ -325,13 +346,16 @@ function renderSetup() {
         <button class="btn" ${state.players.length >= MAX_PLAYERS ? 'disabled' : ''}>Ajouter</button>
       </form>
       <div class="chips">${players || '<p class="hint">Ajoute les joueurs de la soirée (2 à 8).</p>'}</div>
-      ${state.players.length ? '<p class="hint">Touche un nom pour indiquer s\'il joue ce soir.</p>' : ''}
+      ${editor}
+      ${state.players.length ? '<p class="hint">Touche un nom pour indiquer s\'il joue ce soir, son avatar pour le changer.</p>' : ''}
     </section>
     <section class="panel">
       <h2>2 · Les jeux <small>${chosen.length} sélectionné${chosen.length > 1 ? 's' : ''}</small></h2>
       <div class="covers">${covers}</div>
     </section>
-    ${chosen.length ? `<section class="panel"><h2>3 · Les formats</h2><div class="settings">${settings}</div></section>` : ''}
+    ${chosen.length ? `<section class="panel"><h2>3 · L'ordre et les formats</h2>
+      ${chosen.length > 1 ? '<button class="btn ghost" data-act="shuffleOrder">🎲 Tirer l\'ordre au sort</button>' : ''}
+      <div class="settings">${settings}</div></section>` : ''}
     <div class="cta"><button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>${ready ? 'Lancer la soirée 🚀' : 'Il faut 2 joueurs et 1 jeu'}</button></div>`;
 }
 
@@ -355,7 +379,7 @@ function renderDuel(g, m, label) {
     const on = m.res && m.res.sa === sa && m.res.sb === sb;
     return `<button class="${on ? 'on' : ''}" data-act="duel" data-g="${g.id}" data-m="${m.id}" data-a="${m.a}" data-b="${m.b}" data-sa="${sa}" data-sb="${sb}">${sa}-${sb}</button>`;
   }).join('');
-  return `<div class="match ${m.res ? 'done' : ''}">${label ? `<div class="mlabel">${label}</div>` : ''}
+  return `<div class="match ${m.res ? 'done' : ''} ${isNext(g, m)}" id="m-${g.id}-${m.id}">${label ? `<div class="mlabel">${label}</div>` : ''}
     <div class="duel">${plHtml(m.a, w === m.a ? 'win' : w ? 'lose' : '')}
       <span class="vs">${m.res ? `${m.res.sa} – ${m.res.sb}` : 'vs'}</span>
       ${plHtml(m.b, w === m.b ? 'win' : w ? 'lose' : '')}</div>
@@ -393,7 +417,7 @@ function renderFfaMatch(g, m) {
   const head = `<div class="mlabel">${m.label}${rest}</div>`;
   if (m.res && !ui.editing[k]) {
     const sorted = [...m.pids].sort((x, y) => m.points[x].place - m.points[y].place);
-    return `<div class="match done">${head}
+    return `<div class="match done" id="m-${g.id}-${m.id}">${head}
       <ol class="result">${sorted.map(p => `<li><span class="rk">${medal(m.points[p].place)}</span>${plHtml(p)}
         ${def.input === 'score' ? `<span class="raw">${m.res.scores[p]}</span>` : ''}<span class="gain">+${fmt(m.points[p].pts)}</span></li>`).join('')}</ol>
       <button class="link" data-act="editFfa" data-k="${k}">Modifier</button></div>`;
@@ -411,7 +435,7 @@ function renderFfaMatch(g, m) {
       <span class="stepper"><button data-act="step" data-k="${k}" data-p="${p}" data-d="-1">−</button><b>${d[p]}</b>
       <button data-act="step" data-k="${k}" data-p="${p}" data-d="1" data-max="${def.rule === 'free' ? 99 : g.opts.target}">+</button></span></div>`).join('');
   }
-  return `<div class="match">${head}${body}
+  return `<div class="match ${isNext(g, m)}" id="m-${g.id}-${m.id}">${head}${body}
     <div class="row end"><span class="hint">${err}</span>
     <button class="btn small" data-act="saveFfa" data-g="${g.id}" data-m="${m.id}" ${err ? 'disabled' : ''}>Valider</button></div></div>`;
 }
@@ -444,12 +468,36 @@ function renderGame(g, c) {
     <button class="link danger center" data-act="delGame" data-id="${g.id}">Retirer ce jeu de la soirée</button></section>`;
 }
 
+// Matchs jouables et pas encore joués d'un jeu, dans l'ordre où ils doivent se jouer.
+function pendingMatches(c) {
+  if (c.kind === 'ffa') return c.matches.filter(m => !m.res).map(m => ({ id: m.id, pids: m.pids, ffa: true }));
+  let ms;
+  if (c.kind === 'pool') ms = [...c.matches, ...(c.final ? [c.final] : [])];
+  else {
+    const r = c.rounds.flat().filter(m => !m.bye);
+    ms = c.third ? [...r.slice(0, -1), c.third, r[r.length - 1]] : r;
+  }
+  return ms.filter(m => m.a && m.b && !m.res).map(m => ({ id: m.id, pids: [m.a, m.b] }));
+}
+
 function renderSoiree() {
   const s = state.soiree, { rows, comps } = leaderboard(s);
   if (!s.games.some(g => g.id === ui.gameId)) {
     ui.gameId = (comps.find(x => !x.c.complete) || comps[0] || { g: {} }).g.id;
   }
   const done = comps.filter(x => x.c.complete).length;
+  const cur = comps.find(x => x.g.id === ui.gameId);
+  const src = cur && !cur.c.complete ? cur : comps.find(x => !x.c.complete);
+  const pend = src ? pendingMatches(src.c) : [];
+  ui.next = pend[0] ? src.g.id + ':' + pend[0].id : null;
+  const names = m => m.pids.map(p => esc(player(p).name)).join(m.ffa ? ', ' : ' vs ');
+  const lineup = m => m.pids.map(p => plHtml(p)).join(m.ffa ? '' : '<span class="vs">vs</span>');
+  const banner = pend[0]
+    ? `<button class="nextup" ${art(src.g.key)} data-act="goMatch" data-g="${src.g.id}" data-m="${pend[0].id}">
+        <span class="thumb"></span><span class="nextup-body"><small>▶ À jouer · ${GAMES[src.g.key].name}</small>
+        <span class="lineup">${lineup(pend[0])}</span>
+        ${pend[1] ? `<small class="then">Ensuite : ${names(pend[1])}</small>` : ''}</span></button>`
+    : s.games.length ? '<div class="nextup over">🎉 Tous les jeux sont terminés, tu peux clôturer la soirée.</div>' : '';
   const board = `<section class="panel board">
     <h2>Classement <small>${done}/${s.games.length} jeux terminés</small></h2>
     <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th class="l">Joueur</th>
@@ -460,34 +508,202 @@ function renderSoiree() {
   </section>`;
   const tabs = `<div class="gtabs">${comps.map(({ g, c }) =>
     `<button class="gtab ${g.id === ui.gameId ? 'on' : ''} ${c.complete ? 'done' : ''}" ${art(g.key)} data-act="selGame" data-id="${g.id}" aria-label="${GAMES[g.key].name}"></button>`).join('')}</div>`;
-  const cur = comps.find(x => x.g.id === ui.gameId);
+  const dice = comps.filter(x => !x.c.complete).length > 1
+    ? `<button class="btn ghost" data-act="roulette" ${ui.spinning ? 'disabled' : ''}>🎲 Tirer au sort le prochain jeu</button>` : '';
   const add = `<section class="panel"><h2>Ajouter un jeu</h2><div class="gtabs">${Object.entries(GAMES).map(([k, d]) =>
     `<button class="gtab add" ${art(k)} data-act="addGame" data-key="${k}" aria-label="Ajouter ${d.name}"></button>`).join('')}</div></section>`;
-  return `${board}${tabs}${cur ? renderGame(cur.g, cur.c) : '<p class="hint center">Aucun jeu pour l\'instant.</p>'}${add}
+  return `${banner}${board}${tabs}${dice}${cur ? renderGame(cur.g, cur.c) : '<p class="hint center">Aucun jeu pour l\'instant.</p>'}${add}
     <button class="btn big" data-act="finish">Terminer la soirée 🏁</button>
     <button class="link danger center" data-act="cancel">Annuler la soirée sans l'enregistrer</button>`;
 }
 
 function renderHistory() {
   if (!state.history.length) return '<p class="hint center">Aucune soirée enregistrée pour l\'instant.</p>';
-  const titles = {};
-  state.history.forEach(h => h.rows.filter(r => r.place === 1).forEach(r => { titles[r.name] = (titles[r.name] || 0) + 1; }));
-  const hall = Object.entries(titles).sort((a, b) => b[1] - a[1])
-    .map(([name, nb]) => `<span class="tag">🏆 ${esc(name)} × ${nb}</span>`).join(' ');
-  return `<section class="panel"><h2>Palmarès</h2><div class="chips">${hall}</div></section>` + state.history.map(h => `
+  return state.history.map(h => `
     <section class="panel">
-      <div class="row between"><h2>${new Date(h.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</h2>
-        <button class="link danger" data-act="delHist" data-id="${h.id}">Supprimer</button></div>
+      <h2>${dateFr(h.date)}</h2>
       <table class="tbl"><tbody>${h.rows.map(r => `<tr><td>${medal(r.place)}</td>
-        <td class="l"><span class="pl" style="--c:${r.color}">${esc(r.name)}</span></td><td class="total">${fmt(r.total)} pts</td></tr>`).join('')}</tbody></table>
+        <td class="l">${plOf(r)}</td><td class="total">${fmt(r.total)} pts</td></tr>`).join('')}</tbody></table>
       <p class="hint">${h.games.map(x => `${x.icon} ${x.name} : ${x.winners.map(esc).join(', ') || '—'}`).join(' · ')}</p>
+      <div class="row between"><button class="btn small" data-act="podium" data-id="${h.id}">🏆 Voir le podium</button>
+        <button class="link danger" data-act="delHist" data-id="${h.id}">Supprimer</button></div>
     </section>`).join('');
 }
 
+// Statistiques cumulées sur toutes les soirées de l'historique, de la plus ancienne à la plus récente.
+function computeStats() {
+  const st = {};
+  const get = r => {
+    const k = r.pid || r.name;
+    if (!st[k]) st[k] = { key: k, p: state.players.find(p => p.id === r.pid) || r, n: 0, wins: 0, podiums: 0, pts: 0, gameWins: 0, per: {}, vs: {}, dw: 0, dl: 0, streak: 0, best: 0 };
+    return st[k];
+  };
+  [...state.history].reverse().forEach(h => {
+    h.rows.forEach(r => {
+      const s = get(r);
+      s.n++; s.pts += r.total;
+      if (r.place && r.place <= 3) s.podiums++;
+      if (r.place === 1) { s.wins++; s.streak++; s.best = Math.max(s.best, s.streak); } else s.streak = 0;
+    });
+    h.games.forEach(g => {
+      for (const [pid, pts] of Object.entries(g.pts || {})) {
+        const s = st[pid];
+        if (!s) continue;
+        const e = s.per[g.key] = s.per[g.key] || { n: 0, pts: 0 };
+        e.n++; e.pts += pts;
+        if (g.places[pid] === 1) s.gameWins++;
+      }
+    });
+    (h.duels || []).forEach(d => {
+      const w = st[d.w], l = st[d.l];
+      if (!w || !l) return;
+      w.dw++; l.dl++;
+      (w.vs[d.l] = w.vs[d.l] || { w: 0, l: 0 }).w++;
+      (l.vs[d.w] = l.vs[d.w] || { w: 0, l: 0 }).l++;
+    });
+  });
+  return Object.values(st).sort((a, b) => b.wins - a.wins || b.pts / b.n - a.pts / a.n);
+}
+
+function renderStats() {
+  const stats = computeStats();
+  if (!stats.length) return '<p class="hint center">Les statistiques apparaîtront après votre première soirée terminée.</p>';
+  const byKey = Object.fromEntries(stats.map(s => [s.key, s]));
+  const cell = (v, l) => `<div><b>${v}</b><small>${l}</small></div>`;
+  const pl = (nb, word) => `${nb} ${word}${nb > 1 ? 's' : ''}`;
+  return stats.map(s => {
+    const best = Object.entries(s.per).filter(([k]) => GAMES[k]).sort((a, b) => b[1].pts / b[1].n - a[1].pts / a[1].n)[0];
+    const opp = Object.entries(s.vs).filter(([k]) => byKey[k]);
+    const nemesis = opp.filter(([, v]) => v.l > 0).sort((a, b) => b[1].l - a[1].l || a[1].w - b[1].w)[0];
+    const victim = opp.filter(([, v]) => v.w > 0).sort((a, b) => b[1].w - a[1].w || a[1].l - b[1].l)[0];
+    return `<section class="panel stat">
+      <div class="stat-head">${avHtml(s.p)}<h2>${esc(s.p.name)}</h2>${s.wins ? `<span class="tag live">🏆 × ${s.wins}</span>` : ''}</div>
+      <div class="cells">${cell(s.n, 'soirées')}${cell(s.podiums, 'podiums')}${cell(fmt(s.pts / s.n), 'pts / soirée')}
+        ${cell(s.gameWins, 'jeux gagnés')}${cell(`${s.dw}–${s.dl}`, 'duels V–D')}${cell(s.best, 'titres d\'affilée')}</div>
+      ${best ? `<p class="fact" ${art(best[0])}><span class="mini"></span><span>Meilleur jeu : <b>${GAMES[best[0]].name}</b> (${fmt(best[1].pts / best[1].n)} pts en moyenne)</span></p>` : ''}
+      ${nemesis ? `<p class="fact"><span class="ico">😈</span><span>Bête noire : <b>${esc(byKey[nemesis[0]].p.name)}</b> (${pl(nemesis[1].l, 'défaite')}, ${pl(nemesis[1].w, 'victoire')})</span></p>` : ''}
+      ${victim ? `<p class="fact"><span class="ico">🎯</span><span>Victime préférée : <b>${esc(byKey[victim[0]].p.name)}</b> (${pl(victim[1].w, 'victoire')})</span></p>` : ''}
+    </section>`;
+  }).join('');
+}
+
+function renderPodium(h) {
+  const steps = [1, 0, 2].filter(i => h.rows[i]).map(i => {
+    const r = h.rows[i];
+    return `<div class="step s${i + 1}">${avHtml(r)}<b>${esc(r.name)}</b><span>${fmt(r.total)} pts</span><div class="block">${medal(r.place)}</div></div>`;
+  }).join('');
+  const rest = h.rows.slice(3);
+  return `<canvas id="confetti"></canvas>
+    <section class="panel">
+      <h2 class="center">🏆 Podium de la soirée</h2><p class="hint center">${dateFr(h.date)}</p>
+      <div class="podium">${steps}</div>
+      ${rest.length ? `<table class="tbl"><tbody>${rest.map(r => `<tr><td>${medal(r.place)}</td><td class="l">${plOf(r)}</td>
+        <td class="total">${fmt(r.total)} pts</td></tr>`).join('')}</tbody></table>` : ''}
+      ${h.games.length ? `<h4>Vainqueurs par jeu</h4>${h.games.map(x => `<p class="fact"><span class="ico">${x.icon}</span><span>${x.name} : <b>${x.winners.map(esc).join(', ') || '—'}</b></span></p>`).join('')}` : ''}
+    </section>
+    <button class="btn big" data-act="share" data-id="${h.id}">📸 Partager le récap</button>
+    <button class="link center" data-act="closePodium">Fermer</button>`;
+}
+
+function confetti() {
+  const cv = document.getElementById('confetti');
+  if (!cv || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ctx = cv.getContext('2d'), W = cv.width = innerWidth, H = cv.height = innerHeight;
+  const ps = Array.from({ length: 140 }, () => ({
+    x: Math.random() * W, y: -Math.random() * H, r: 5 + Math.random() * 7, a: Math.random() * 6,
+    c: COLORS[Math.floor(Math.random() * COLORS.length)], vy: 2 + Math.random() * 4,
+  }));
+  const t0 = performance.now();
+  const frame = t => {
+    if (!cv.isConnected) return;
+    ctx.clearRect(0, 0, W, H);
+    if (t - t0 > 6000) return;
+    ps.forEach(p => {
+      p.y += p.vy; p.a += .08; p.x += Math.sin(p.a) * 1.5;
+      ctx.fillStyle = p.c;
+      ctx.fillRect(p.x, p.y, p.r, p.r * .6);
+    });
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+// Dessine le récap de la soirée dans une image, puis la partage (ou la télécharge si le partage n'est pas disponible).
+async function shareRecap(h) {
+  const rest = h.rows.slice(3), W = 1080, H = 900 + rest.length * 64 + h.games.length * 46 + 90;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const bg = x.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#2a2266'); bg.addColorStop(.65, '#0c0e1a');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  x.textBaseline = 'middle';
+  const text = (t, px, y, font, color, align = 'center') => { x.font = font; x.fillStyle = color; x.textAlign = align; x.fillText(t, px, y); };
+  const avatar = async (p, cx, cy, r) => {
+    x.save();
+    x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fillStyle = p.color; x.fill(); x.clip();
+    const a = p.avatar || '';
+    if (a.startsWith('data:')) {
+      const img = new Image();
+      img.src = a;
+      await img.decode();
+      x.drawImage(img, cx - r, cy - r, r * 2, r * 2);
+    } else text(a || p.name[0].toUpperCase(), cx, cy + r * .08, `700 ${r * 1.1}px Rubik, sans-serif`, '#111');
+    x.restore();
+  };
+  text('GAME TOURNOI', W / 2, 110, '72px Bungee, Rubik, sans-serif', '#ffcc33');
+  text(dateFr(h.date), W / 2, 185, '34px Rubik, sans-serif', '#8e95b8');
+  const base = 840;
+  for (const [i, cx, bh] of [[1, 220, 230], [0, 540, 320], [2, 860, 170]]) {
+    const p = h.rows[i];
+    if (!p) continue;
+    x.fillStyle = i === 0 ? '#7c5cff' : '#2a3050';
+    x.beginPath(); x.roundRect(cx - 140, base - bh, 280, bh, [24, 24, 0, 0]); x.fill();
+    text(medal(p.place), cx, base - bh + 85, '90px Rubik, sans-serif', '#fff');
+    await avatar(p, cx, base - bh - 195, 80);
+    text(p.name, cx, base - bh - 82, '700 42px Rubik, sans-serif', '#eceefb');
+    text(fmt(p.total) + ' pts', cx, base - bh - 32, '34px Rubik, sans-serif', '#ffcc33');
+  }
+  let y = 900;
+  for (const p of rest) {
+    text(medal(p.place), 150, y, '700 36px Rubik, sans-serif', '#8e95b8', 'left');
+    await avatar(p, 270, y, 24);
+    text(p.name, 315, y, '700 38px Rubik, sans-serif', '#eceefb', 'left');
+    text(fmt(p.total) + ' pts', 930, y, '36px Rubik, sans-serif', '#ffcc33', 'right');
+    y += 64;
+  }
+  y += 30;
+  h.games.forEach(g => {
+    text(`${g.icon} ${g.name} : ${g.winners.join(', ') || '—'}`, W / 2, y, '30px Rubik, sans-serif', '#c9cdea');
+    y += 46;
+  });
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  const file = new File([blob], 'game-tournoi.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Game Tournoi' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'game-tournoi.png';
+  a.click();
+}
+
 function render() {
-  document.getElementById('nav').innerHTML = [['soiree', 'Soirée'], ['history', 'Historique']].map(([t, l]) =>
-    `<button class="${ui.tab === t ? 'on' : ''}" data-act="tab" data-t="${t}">${l}</button>`).join('');
-  document.getElementById('app').innerHTML = ui.tab === 'history' ? renderHistory() : state.soiree ? renderSoiree() : renderSetup();
+  document.getElementById('nav').innerHTML = [['soiree', 'Soirée'], ['stats', 'Stats'], ['history', 'Historique']].map(([t, l]) =>
+    `<button class="${ui.tab === t && !ui.podium ? 'on' : ''}" data-act="tab" data-t="${t}">${l}</button>`).join('');
+  const hist = ui.podium && state.history.find(h => h.id === ui.podium);
+  document.getElementById('app').innerHTML = hist ? renderPodium(hist)
+    : ui.tab === 'history' ? renderHistory() : ui.tab === 'stats' ? renderStats() : state.soiree ? renderSoiree() : renderSetup();
+  // Le rendu repart de zéro : on recentre la bande de jaquettes sur le jeu affiché.
+  const on = document.querySelector('.gtab.on');
+  if (on) on.parentNode.scrollLeft = on.offsetLeft - (on.parentNode.clientWidth - on.clientWidth) / 2;
+  if (ui.scrollTo) {
+    const el = document.getElementById(ui.scrollTo);
+    ui.scrollTo = null;
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  if (ui.confetti) { ui.confetti = false; confetti(); }
 }
 
 /* ---------- Actions ---------- */
@@ -495,15 +711,25 @@ const findGame = id => state.soiree.games.find(g => g.id === id);
 const newGame = (key, opts, pids) => ({ id: uid(), key, opts: { ...opts }, order: shuffle(pids), results: {} });
 
 const ACT = {
-  tab: d => { ui.tab = d.t; },
+  tab: d => { ui.tab = d.t; ui.podium = null; },
   togglePresent: d => { const p = player(d.id); p.present = !p.present; },
   delPlayer: d => {
     if (confirm(`Supprimer ${player(d.id).name} ?`)) state.players = state.players.filter(p => p.id !== d.id);
   },
+  editPlayer: d => { ui.editPlayer = ui.editPlayer === d.id ? null : d.id || null; },
+  setAvatar: d => { player(ui.editPlayer).avatar = d.v; },
   toggleGame: d => {
     if (state.setup[d.key]) delete state.setup[d.key];
     else state.setup[d.key] = defaultOpts(d.key);
+    state.order = chosenKeys();
   },
+  moveGame: d => {
+    const o = chosenKeys(), i = o.indexOf(d.key), j = i + +d.d;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    state.order = o;
+  },
+  shuffleOrder: () => { state.order = shuffle(chosenKeys()); },
   fmt: d => { state.setup[d.key].format = d.v; },
   opt: d => {
     const o = state.setup[d.key];
@@ -511,11 +737,27 @@ const ACT = {
   },
   start: () => {
     const pids = state.players.filter(p => p.present).map(p => p.id);
-    const games = Object.keys(GAMES).filter(k => state.setup[k]).map(k => newGame(k, state.setup[k], pids));
+    const games = chosenKeys().map(k => newGame(k, state.setup[k], pids));
     state.soiree = { id: uid(), date: new Date().toISOString(), pids, games };
-    ui.gameId = null;
+    ui.gameId = games[0].id;
+    ui.editPlayer = null;
   },
   selGame: d => { ui.gameId = d.id; },
+  goMatch: d => { ui.gameId = d.g; ui.scrollTo = `m-${d.g}-${d.m}`; },
+  // Fait défiler les jeux restants comme une roulette avant de s'arrêter sur l'un d'eux.
+  roulette: () => {
+    const ids = state.soiree.games.filter(g => !compute(g).complete).map(g => g.id);
+    const last = ids.length * 2 + Math.floor(Math.random() * ids.length);
+    ui.spinning = true;
+    const tick = n => {
+      if (!state.soiree) { ui.spinning = false; return; }
+      ui.gameId = ids[n % ids.length];
+      if (n === last) ui.spinning = false;
+      else setTimeout(tick, 60 + n * 15, n + 1);
+      render();
+    };
+    tick(0);
+  },
   duel: d => {
     const g = findGame(d.g), sa = +d.sa, sb = +d.sb, cur = g.results[d.m];
     if (cur && cur.a === d.a && cur.b === d.b && cur.sa === sa && cur.sb === sb) delete g.results[d.m];
@@ -559,18 +801,39 @@ const ACT = {
     const open = comps.filter(x => !x.c.complete).length;
     const msg = open ? `${open} jeu(x) non terminé(s) ne compteront pas. Terminer quand même ?` : 'Terminer la soirée et l\'enregistrer dans l\'historique ?';
     if (!confirm(msg)) return;
+    // Tous les 1 contre 1 joués, pour les statistiques de face-à-face.
+    const duels = [];
+    comps.forEach(({ g, c }) => {
+      if (c.kind === 'ffa') return;
+      const ms = c.kind === 'pool' ? [...c.matches, ...(c.final ? [c.final] : [])] : [...c.rounds.flat(), ...(c.third ? [c.third] : [])];
+      ms.forEach(m => {
+        if (!m.res) return;
+        const w = winnerOf(m, m.res);
+        duels.push({ k: g.key, w, l: w === m.a ? m.b : m.a });
+      });
+    });
     state.history.unshift({
-      id: s.id, date: s.date,
-      rows: rows.map(r => ({ name: player(r.pid).name, color: player(r.pid).color, total: r.total, place: r.place })),
+      id: s.id, date: s.date, duels,
+      rows: rows.map(r => {
+        const p = player(r.pid);
+        return { pid: r.pid, name: p.name, color: p.color, avatar: p.avatar || '', total: r.total, place: r.place };
+      }),
       games: comps.filter(x => x.c.complete).map(({ g, c }) => ({
-        name: GAMES[g.key].name, icon: GAMES[g.key].icon,
+        key: g.key, name: GAMES[g.key].name, icon: GAMES[g.key].icon,
         winners: c.rows.filter(r => r.place === 1).map(r => player(r.pid).name),
+        places: Object.fromEntries(c.rows.map(r => [r.pid, r.place])), pts: gamePoints(c.rows),
       })),
     });
     state.soiree = null;
     ui.tab = 'history';
+    ui.podium = s.id;
+    ui.confetti = true;
+    window.scrollTo(0, 0);
   },
   cancel: () => { if (confirm('Annuler la soirée ? Tous les résultats seront perdus.')) state.soiree = null; },
+  podium: d => { ui.podium = d.id; ui.confetti = true; window.scrollTo(0, 0); },
+  closePodium: () => { ui.podium = null; },
+  share: d => { shareRecap(state.history.find(h => h.id === d.id)).catch(() => alert('Impossible de créer l\'image.')); },
   delHist: d => { if (confirm('Supprimer cette soirée de l\'historique ?')) state.history = state.history.filter(h => h.id !== d.id); },
 };
 
@@ -592,7 +855,22 @@ if (typeof document !== 'undefined') {
     render();
     document.getElementById('playerName').focus();
   });
+  // Photo d'avatar : recadrée en carré et réduite avant d'être enregistrée.
+  document.addEventListener('change', e => {
+    if (e.target.id !== 'avatarFile' || !e.target.files[0]) return;
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas'), s = Math.min(img.width, img.height);
+      cv.width = cv.height = 96;
+      cv.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 96, 96);
+      player(ui.editPlayer).avatar = cv.toDataURL('image/jpeg', .8);
+      URL.revokeObjectURL(img.src);
+      save();
+      render();
+    };
+    img.src = URL.createObjectURL(e.target.files[0]);
+  });
   render();
 } else {
-  module.exports = { GAMES, compute, leaderboard, newGame, ffaPlan, roundRobin, gamePoints };
+  module.exports = { GAMES, compute, leaderboard, newGame, ffaPlan, roundRobin, gamePoints, pendingMatches };
 }
