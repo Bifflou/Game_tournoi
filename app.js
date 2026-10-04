@@ -16,6 +16,9 @@ const GAMES = {
   uch:   { name: 'Ultimate Chicken Horse', icon: '🐔', type: 'ffa', max: 6, input: 'rank', parties: 2, rules: 'Jusqu\'à 6 joueurs · on note l\'ordre dans lequel chacun atteint le quota de points' },
   gb:    { name: 'Gang Beasts', icon: '🥊', type: 'ffa', max: 8, input: 'score', rule: 'sum', parties: 1, target: 5, targetLabel: 'Rounds par partie', rules: 'Le dernier en vie gagne le round · on note les rounds gagnés par chacun' },
 };
+const IMG = { mk1: 'mk1.png', mk92: 'mk92.webp', party: 'party.webp', bfu: 'bfu.png', sr: 'sr.webp', sr2: 'sr2.webp', uch: 'uch.webp', gb: 'gb.webp' };
+// Expose le key art du jeu au CSS via la variable --art.
+const art = key => `style="--art:url('img/${IMG[key]}')"`;
 const FORMATS = { pool: 'Poule', poolfinal: 'Poule + finale', elim: 'Élimination directe' };
 // Points de soirée attribués selon le classement final de chaque jeu.
 const PLACE_POINTS = [10, 7, 5, 3, 2, 1, 0, 0];
@@ -296,25 +299,21 @@ function renderSetup() {
       <button class="chip-x" data-act="delPlayer" data-id="${p.id}" title="Supprimer">×</button>
     </div>`).join('');
 
-  const games = Object.entries(GAMES).map(([key, def]) => {
-    const o = state.setup[key];
-    let opts = '';
-    if (o && def.type === 'duel') {
-      opts = `<div class="seg">${Object.entries(FORMATS).map(([f, label]) =>
-        `<button class="${o.format === f ? 'on' : ''}" data-act="fmt" data-key="${key}" data-v="${f}">${label}</button>`).join('')}</div>`;
-    } else if (o) {
-      opts = stepper('Parties', key, 'parties', o.parties)
-        + (def.targetLabel ? stepper(def.targetLabel, key, 'target', o.target) : '');
-    }
-    return `
-      <div class="game ${o ? 'on' : ''}">
-        <button class="game-head" data-act="toggleGame" data-key="${key}">
-          <span class="gicon">${def.icon}</span>
-          <span class="gname">${def.name}<small>${def.rules}</small></span>
-          <span class="check">${o ? '✓' : '+'}</span>
-        </button>
-        ${o ? `<div class="game-opts">${opts}<p class="hint">${matchCount(key, o, n) || 'Ajoute des joueurs pour voir le format'}</p></div>` : ''}
-      </div>`;
+  const covers = Object.entries(GAMES).map(([key, def]) => `
+    <button class="cover ${state.setup[key] ? 'on' : ''}" ${art(key)} data-act="toggleGame" data-key="${key}" aria-pressed="${!!state.setup[key]}">
+      <span class="check">${state.setup[key] ? '✓' : '+'}</span>
+      <span class="cover-name">${def.name}</span>
+    </button>`).join('');
+
+  const settings = chosen.map(key => {
+    const def = GAMES[key], o = state.setup[key];
+    const opts = def.type === 'duel'
+      ? `<div class="seg">${Object.entries(FORMATS).map(([f, label]) =>
+        `<button class="${o.format === f ? 'on' : ''}" data-act="fmt" data-key="${key}" data-v="${f}">${label}</button>`).join('')}</div>`
+      : stepper('Parties', key, 'parties', o.parties) + (def.targetLabel ? stepper(def.targetLabel, key, 'target', o.target) : '');
+    return `<div class="setting" ${art(key)}>
+      <div class="setting-head"><span class="thumb"></span><div><b>${def.name}</b><small>${def.rules}</small></div></div>
+      ${opts}<p class="hint">${matchCount(key, o, n) || 'Ajoute des joueurs pour voir le format'}</p></div>`;
   }).join('');
 
   const ready = n >= 2 && chosen.length > 0;
@@ -322,7 +321,7 @@ function renderSetup() {
     <section class="panel">
       <h2>1 · Les joueurs <small>${n} présent${n > 1 ? 's' : ''}</small></h2>
       <form id="addPlayer" class="row">
-        <input id="playerName" maxlength="16" placeholder="Nom du joueur" autocomplete="off">
+        <input id="playerName" maxlength="16" placeholder="Nom du joueur" autocomplete="off" enterkeyhint="done">
         <button class="btn" ${state.players.length >= MAX_PLAYERS ? 'disabled' : ''}>Ajouter</button>
       </form>
       <div class="chips">${players || '<p class="hint">Ajoute les joueurs de la soirée (2 à 8).</p>'}</div>
@@ -330,10 +329,10 @@ function renderSetup() {
     </section>
     <section class="panel">
       <h2>2 · Les jeux <small>${chosen.length} sélectionné${chosen.length > 1 ? 's' : ''}</small></h2>
-      <div class="games">${games}</div>
+      <div class="covers">${covers}</div>
     </section>
-    <button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>Lancer la soirée 🚀</button>
-    ${ready ? '' : '<p class="hint center">Il faut au moins 2 joueurs présents et 1 jeu.</p>'}`;
+    ${chosen.length ? `<section class="panel"><h2>3 · Les formats</h2><div class="settings">${settings}</div></section>` : ''}
+    <div class="cta"><button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>${ready ? 'Lancer la soirée 🚀' : 'Il faut 2 joueurs et 1 jeu'}</button></div>`;
 }
 
 const stepper = (label, key, field, v) => `
@@ -360,7 +359,7 @@ function renderDuel(g, m, label) {
     <div class="duel">${plHtml(m.a, w === m.a ? 'win' : w ? 'lose' : '')}
       <span class="vs">${m.res ? `${m.res.sa} – ${m.res.sb}` : 'vs'}</span>
       ${plHtml(m.b, w === m.b ? 'win' : w ? 'lose' : '')}</div>
-    <div class="scores">${chips}</div></div>`;
+    <div class="scores" style="--n:${lines.length > 4 ? lines.length / 2 : lines.length}">${chips}</div></div>`;
 }
 
 function draftFor(g, m) {
@@ -420,9 +419,9 @@ function renderFfaMatch(g, m) {
 function renderGame(g, c) {
   const def = GAMES[g.key];
   const pts = c.complete ? gamePoints(c.rows) : null;
-  const table = `<table class="tbl"><thead><tr><th>#</th><th class="l">Joueur</th>${c.head.map(h => `<th>${h}</th>`).join('')}${pts ? '<th>Soirée</th>' : ''}</tr></thead>
+  const table = `<div class="scroll"><table class="tbl"><thead><tr><th>#</th><th class="l">Joueur</th>${c.head.map(h => `<th>${h}</th>`).join('')}${pts ? '<th>Soirée</th>' : ''}</tr></thead>
     <tbody>${c.rows.map(r => `<tr><td>${medal(r.place)}</td><td class="l">${plHtml(r.pid)}</td>
-      ${r.vals.map(v => `<td>${v}</td>`).join('')}${pts ? `<td class="gain">+${fmt(pts[r.pid] || 0)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+      ${r.vals.map(v => `<td>${v}</td>`).join('')}${pts ? `<td class="gain">+${fmt(pts[r.pid] || 0)}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 
   let body = '';
   if (c.kind === 'pool') {
@@ -431,17 +430,18 @@ function renderGame(g, c) {
     if (c.final) body += `<h4>🏆 Finale <small>les 2 premiers de la poule</small></h4><div class="grid">${renderDuel(g, c.final)}</div>`;
   } else if (c.kind === 'elim') {
     body = `<div class="bracket">${c.rounds.map(ms => `<div class="col"><h4>${ms.name}</h4>${ms.map(m =>
-      (m.bye ? `<div class="match wait"><div class="duel">${plHtml(m.win)}<span class="vs">exempt</span></div></div>` : renderDuel(g, m))).join('')}</div>`).join('')}
+      (m.bye ? `<div class="match wait"><div class="duel">${plHtml(m.win)}<span class="vs">exempt</span><span></span></div></div>` : renderDuel(g, m))).join('')}</div>`).join('')}
       ${c.third ? `<div class="col"><h4>Petite finale</h4>${renderDuel(g, c.third)}</div>` : ''}</div>`;
   } else {
-    body = `<div class="grid">${c.matches.map(m => renderFfaMatch(g, m)).join('')}</div>`;
+    body = `<h4>Parties</h4><div class="grid">${c.matches.map(m => renderFfaMatch(g, m)).join('')}</div>`;
   }
   const format = def.type === 'duel' ? FORMATS[g.opts.format] : matchCount(g.key, g.opts, g.order.length);
   return `<section class="panel">
-    <div class="row between"><h2>${def.icon} ${def.name} ${c.complete ? '<span class="tag">Terminé</span>' : ''}</h2>
-      <button class="link danger" data-act="delGame" data-id="${g.id}">Retirer</button></div>
-    <p class="hint">${def.rules} · ${format}</p>
-    ${table}${body}</section>`;
+    <div class="hero" ${art(g.key)}><span class="thumb"></span>
+      <div><h2>${def.name}</h2><span class="tag ${c.complete ? '' : 'live'}">${c.complete ? 'Terminé' : 'En cours'}</span>
+      <p class="hint">${def.rules}</p><p class="hint">${format}</p></div></div>
+    ${table}${body}
+    <button class="link danger center" data-act="delGame" data-id="${g.id}">Retirer ce jeu de la soirée</button></section>`;
 }
 
 function renderSoiree() {
@@ -451,18 +451,18 @@ function renderSoiree() {
   }
   const done = comps.filter(x => x.c.complete).length;
   const board = `<section class="panel board">
-    <h2>Classement de la soirée <small>${done}/${s.games.length} jeux terminés</small></h2>
+    <h2>Classement <small>${done}/${s.games.length} jeux terminés</small></h2>
     <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th class="l">Joueur</th>
-      ${s.games.map(g => `<th title="${GAMES[g.key].name}">${GAMES[g.key].icon}</th>`).join('')}<th>Total</th></tr></thead>
+      ${s.games.map(g => `<th title="${GAMES[g.key].name}"><span class="mini" ${art(g.key)}></span></th>`).join('')}<th>Total</th></tr></thead>
       <tbody>${rows.map(r => `<tr><td>${done ? medal(r.place) : '—'}</td><td class="l">${plHtml(r.pid)}</td>
         ${s.games.map(g => `<td>${g.id in r.per ? fmt(r.per[g.id]) : '·'}</td>`).join('')}<td class="total">${fmt(r.total)}</td></tr>`).join('')}</tbody></table></div>
     <p class="hint">Chaque jeu terminé rapporte ${PLACE_POINTS.slice(0, s.pids.length).join(' / ')} points selon la place.</p>
   </section>`;
-  const tabs = `<div class="tabs">${comps.map(({ g, c }) =>
-    `<button class="${g.id === ui.gameId ? 'on' : ''}" data-act="selGame" data-id="${g.id}">${GAMES[g.key].icon} ${GAMES[g.key].name}${c.complete ? ' ✓' : ''}</button>`).join('')}</div>`;
+  const tabs = `<div class="gtabs">${comps.map(({ g, c }) =>
+    `<button class="gtab ${g.id === ui.gameId ? 'on' : ''} ${c.complete ? 'done' : ''}" ${art(g.key)} data-act="selGame" data-id="${g.id}" aria-label="${GAMES[g.key].name}"></button>`).join('')}</div>`;
   const cur = comps.find(x => x.g.id === ui.gameId);
-  const add = `<section class="panel"><h2>Ajouter un jeu</h2><div class="addgames">${Object.entries(GAMES).map(([k, d]) =>
-    `<button data-act="addGame" data-key="${k}">${d.icon} ${d.name}</button>`).join('')}</div></section>`;
+  const add = `<section class="panel"><h2>Ajouter un jeu</h2><div class="gtabs">${Object.entries(GAMES).map(([k, d]) =>
+    `<button class="gtab add" ${art(k)} data-act="addGame" data-key="${k}" aria-label="Ajouter ${d.name}"></button>`).join('')}</div></section>`;
   return `${board}${tabs}${cur ? renderGame(cur.g, cur.c) : '<p class="hint center">Aucun jeu pour l\'instant.</p>'}${add}
     <button class="btn big" data-act="finish">Terminer la soirée 🏁</button>
     <button class="link danger center" data-act="cancel">Annuler la soirée sans l'enregistrer</button>`;
